@@ -117,4 +117,66 @@ void main() {
     );
     expect(loginEmailField.controller?.text, 'ana@example.com');
   });
+
+  testWidgets('successful login opens the home screen', (tester) async {
+    final client = MockClient((request) async {
+      expect(request.url, Uri.parse('http://test.local:8000/auth/login'));
+      return http.Response(
+        jsonEncode({
+          'accessToken': 'test-token',
+          'user': {'nombres': 'Ana María'},
+        }),
+        201,
+      );
+    });
+    addTearDown(client.close);
+    final authApi = AuthApi(client: client, baseUrl: 'http://test.local:8000');
+
+    await tester.pumpWidget(
+      MaterialApp(home: AuthDesignScreen(authApi: authApi)),
+    );
+    await tester.enterText(
+      find.byKey(const Key('email-field')),
+      'ana@example.com',
+    );
+    await tester.enterText(
+      find.byKey(const Key('password-field')),
+      'password-segura',
+    );
+    await tester.ensureVisible(find.byKey(const Key('submit-button')));
+    await tester.tap(find.byKey(const Key('submit-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('¡Hola, Ana!'), findsOneWidget);
+    expect(find.byKey(const Key('today-summary')), findsOneWidget);
+    expect(find.byKey(const Key('upcoming-activities')), findsOneWidget);
+    expect(find.byKey(const Key('assistant-card-image')), findsOneWidget);
+    expect(find.text('¿Necesitas ayuda?'), findsOneWidget);
+    expect(find.text('Chatear con IA'), findsOneWidget);
+    final assistantCard = tester.widget<ClipRRect>(
+      find.byKey(const Key('assistant-card')),
+    );
+    expect(assistantCard.borderRadius, BorderRadius.circular(16));
+    expect(find.byKey(const Key('home-hero')), findsOneWidget);
+    final introBottom = tester
+        .getBottomLeft(
+          find.text(
+            'Aquí tienes un resumen de tus actividades y recordatorios de hoy.',
+          ),
+        )
+        .dy;
+    final summaryTop = tester
+        .getTopLeft(find.byKey(const Key('today-summary')))
+        .dy;
+    expect(summaryTop - introBottom, greaterThanOrEqualTo(8));
+    final heroClip = tester.widget<ClipRRect>(
+      find.byKey(const Key('home-hero-clip')),
+    );
+    expect(heroClip.borderRadius, BorderRadius.circular(20));
+    final summaryOverlap = tester.widget<Transform>(
+      find.byKey(const Key('summary-overlap')),
+    );
+    expect(summaryOverlap.transform.getTranslation().y, -12);
+    expect(find.text('Solicitar\nAgente IA'), findsOneWidget);
+  });
 }

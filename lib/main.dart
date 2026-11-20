@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 import 'package:planify_mobile/config/api_config.dart';
+import 'package:planify_mobile/home_screen.dart';
 import 'package:planify_mobile/services/auth_api.dart';
 
 void main() {
@@ -78,6 +79,7 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
   bool _rememberMe = true;
   bool _isSubmitting = false;
   String? _registrationError;
+  String? _loginError;
 
   static const _loginFields = [
     _AuthFieldData(
@@ -140,6 +142,7 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
       _mode = mode;
       _obscurePassword = true;
       _registrationError = null;
+      _loginError = null;
     });
   }
 
@@ -245,6 +248,41 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
       }
       setState(() {
         _registrationError = error.message;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _submitLogin() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _isSubmitting = true;
+      _loginError = null;
+    });
+
+    try {
+      final session = await _authApi.login(
+        email: _loginEmailController.text.trim(),
+        password: _loginPasswordController.text,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => HomeScreen(session: session)),
+      );
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loginError = error.message;
       });
     } finally {
       if (mounted) {
@@ -371,6 +409,17 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
                                       fontSize: 13,
                                     ),
                                   ),
+                                if (_loginError != null)
+                                  Text(
+                                    _loginError!,
+                                    key: const Key('login-error'),
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error,
+                                      fontSize: 13,
+                                    ),
+                                  ),
                                 _buildSubmitButton(),
                               ],
                             ),
@@ -395,10 +444,10 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
       height: 46,
       child: FilledButton.icon(
         key: const Key('submit-button'),
-        onPressed: isLogin
-            ? () {}
-            : _isSubmitting
+        onPressed: _isSubmitting
             ? null
+            : isLogin
+            ? _submitLogin
             : _submitRegistration,
         icon: _isSubmitting
             ? const SizedBox(
@@ -412,7 +461,9 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
             : const Icon(Icons.login_rounded),
         label: Text(
           isLogin
-              ? 'Iniciar sesión'
+              ? _isSubmitting
+                    ? 'Ingresando...'
+                    : 'Iniciar sesión'
               : _isSubmitting
               ? 'Creando cuenta...'
               : 'Crear cuenta',

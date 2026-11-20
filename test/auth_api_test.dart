@@ -63,4 +63,33 @@ void main() {
       );
     },
   );
+
+  test('logs in and returns the authenticated session', () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'POST');
+      expect(request.url, Uri.parse('http://192.168.137.1:8000/auth/login'));
+      expect(jsonDecode(request.body), {
+        'email': 'ana@example.com',
+        'password': 'password-segura',
+      });
+
+      return http.Response(
+        jsonEncode({
+          'accessToken': 'test-token',
+          'user': {'nombres': 'Ana María'},
+        }),
+        201,
+      );
+    });
+    addTearDown(client.close);
+    final api = AuthApi(client: client);
+
+    final session = await api.login(
+      email: 'ana@example.com',
+      password: 'password-segura',
+    );
+
+    expect(session.accessToken, 'test-token');
+    expect(session.firstName, 'Ana María');
+  });
 }
