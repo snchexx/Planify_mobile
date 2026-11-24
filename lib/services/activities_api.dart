@@ -188,6 +188,60 @@ class ActivitiesApi {
     }
   }
 
+  Future<PlanifyActivity> updateActivity({
+    required int id,
+    required String accessToken,
+    required String title,
+    required String description,
+    required String date,
+    required String time,
+    required String category,
+    required String priority,
+    required bool reminderEnabled,
+    required int? reminderMinutesBefore,
+  }) async {
+    final payload = <String, Object>{
+      'nombreActividad': title,
+      'descripcion': description,
+      'fechaActividad': date,
+      'horaActividad': time,
+      'categoria': category,
+      'prioridad': priority,
+      'recordatorioHabilitado': reminderEnabled,
+    };
+    if (reminderMinutesBefore != null) {
+      payload['recordatorioMinutosAntes'] = reminderMinutesBefore;
+    }
+
+    final response = await _send(
+      () => _client.patch(
+        Uri.parse(_baseUrl).resolve('/activities/$id'),
+        headers: _headers(accessToken),
+        body: jsonEncode(payload),
+      ),
+    );
+    _ensureSuccess(response, action: 'actualizar la actividad');
+
+    try {
+      return PlanifyActivity.fromJson(jsonDecode(response.body));
+    } on FormatException catch (error) {
+      throw ActivitiesApiException(error.message);
+    }
+  }
+
+  Future<void> deleteActivity({
+    required int id,
+    required String accessToken,
+  }) async {
+    final response = await _send(
+      () => _client.delete(
+        Uri.parse(_baseUrl).resolve('/activities/$id'),
+        headers: _headers(accessToken),
+      ),
+    );
+    _ensureSuccess(response, action: 'eliminar la actividad');
+  }
+
   Future<http.Response> _send(Future<http.Response> Function() request) async {
     try {
       return await request().timeout(const Duration(seconds: 15));

@@ -7,10 +7,12 @@ class ActivityCreationScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.activitiesApi,
+    this.activity,
   });
 
   final AuthSession session;
   final ActivitiesApi activitiesApi;
+  final PlanifyActivity? activity;
 
   @override
   State<ActivityCreationScreen> createState() => _ActivityCreationScreenState();
@@ -39,6 +41,39 @@ class _ActivityCreationScreenState extends State<ActivityCreationScreen> {
   bool _reminderEnabled = true;
   bool _isSaving = false;
   String? _saveError;
+
+  bool get _isEditing => widget.activity != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final activity = widget.activity;
+    if (activity == null) {
+      return;
+    }
+
+    _titleController.text = activity.title;
+    _descriptionController.text = activity.description;
+    final category = activity.category;
+    if (category != null) {
+      if (_categories.any((option) => option.label == category)) {
+        _selectedCategory = category;
+      } else {
+        _selectedCategory = 'Otros';
+        _customCategoryController.text = category;
+      }
+    }
+    if (_priorityOptions.contains(activity.priority)) {
+      _selectedPriority = activity.priority!;
+    }
+    final startsAt = activity.startsAt;
+    _selectedDate = DateTime(startsAt.year, startsAt.month, startsAt.day);
+    _selectedTime = TimeOfDay.fromDateTime(startsAt);
+    _reminderEnabled = activity.reminderEnabled ?? false;
+    if (_reminderOptions.contains(activity.reminderMinutesBefore)) {
+      _reminderMinutesBefore = activity.reminderMinutesBefore!;
+    }
+  }
 
   @override
   void dispose() {
@@ -136,17 +171,40 @@ class _ActivityCreationScreenState extends State<ActivityCreationScreen> {
     });
 
     try {
-      await widget.activitiesApi.createActivity(
-        accessToken: widget.session.accessToken,
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        date: _dateForApi(_selectedDate!),
-        time: _timeForApi(_selectedTime!),
-        category: _categoryValue(),
-        priority: _selectedPriority,
-        reminderEnabled: _reminderEnabled,
-        reminderMinutesBefore: _reminderEnabled ? _reminderMinutesBefore : null,
-      );
+      final title = _titleController.text.trim();
+      final description = _descriptionController.text.trim();
+      final date = _dateForApi(_selectedDate!);
+      final time = _timeForApi(_selectedTime!);
+      final category = _categoryValue();
+      final reminderMinutesBefore = _reminderEnabled
+          ? _reminderMinutesBefore
+          : null;
+      if (_isEditing) {
+        await widget.activitiesApi.updateActivity(
+          id: widget.activity!.id,
+          accessToken: widget.session.accessToken,
+          title: title,
+          description: description,
+          date: date,
+          time: time,
+          category: category,
+          priority: _selectedPriority,
+          reminderEnabled: _reminderEnabled,
+          reminderMinutesBefore: reminderMinutesBefore,
+        );
+      } else {
+        await widget.activitiesApi.createActivity(
+          accessToken: widget.session.accessToken,
+          title: title,
+          description: description,
+          date: date,
+          time: time,
+          category: category,
+          priority: _selectedPriority,
+          reminderEnabled: _reminderEnabled,
+          reminderMinutesBefore: reminderMinutesBefore,
+        );
+      }
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -348,7 +406,11 @@ class _ActivityCreationScreenState extends State<ActivityCreationScreen> {
                                 )
                               : const Icon(Icons.assignment_turned_in_outlined),
                           label: Text(
-                            _isSaving ? 'Guardando...' : 'Guardar actividad',
+                            _isSaving
+                                ? 'Guardando...'
+                                : _isEditing
+                                ? 'Guardar cambios'
+                                : 'Guardar actividad',
                           ),
                           style: FilledButton.styleFrom(
                             backgroundColor: _green,
@@ -387,21 +449,28 @@ class _ActivityCreationScreenState extends State<ActivityCreationScreen> {
               ),
             ],
           ),
-          child: const Icon(Icons.add_rounded, color: Colors.white, size: 33),
+          child: Icon(
+            _isEditing ? Icons.edit_rounded : Icons.add_rounded,
+            color: Colors.white,
+            size: 30,
+          ),
         ),
         const SizedBox(width: 12),
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Crear actividad',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                _isEditing ? 'Editar actividad' : 'Crear actividad',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-              SizedBox(height: 3),
+              const SizedBox(height: 3),
               Text(
-                'Agrega tus tareas y compromisos. ¡Mantén el control de tu día!',
-                style: TextStyle(fontSize: 11, height: 1.2),
+                _isEditing ? 'Actualiza los detalles de tu actividad.' : 'Agrega tus tareas y compromisos. ¡Mantén el control de tu día!',
+                style: const TextStyle(fontSize: 11, height: 1.2),
               ),
             ],
           ),

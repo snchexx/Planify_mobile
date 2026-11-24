@@ -29,3 +29,7 @@ La pantalla **Crear Actividad** guarda actividades autenticadas en
 mostrar las próximas ordenadas por la hora del recordatorio. La descripción es
 opcional; las prioridades válidas son `Alta`, `Media` y `Baja`, y los intervalos
 de recordatorio son 15, 25, 35, 45 o 60 minutos.
+
+Desde el menú de tres puntos de cada actividad próxima se puede editar sus
+datos o eliminarla tras confirmar la acción. Al editar fecha, hora o
+recordatorio, el backend actualiza de forma atómica el recordatorio asociado.

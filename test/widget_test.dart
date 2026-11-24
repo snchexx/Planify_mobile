@@ -287,4 +287,140 @@ void main() {
     final laterTitle = tester.getTopLeft(find.text('Notificación más tarde'));
     expect(earlierTitle.dy, lessThan(laterTitle.dy));
   });
+
+  testWidgets('activity menu opens the prefilled edit form', (tester) async {
+    var activity = _activityResponse(id: 12, title: 'Tarea original');
+    final activitiesApi = ActivitiesApi(
+      client: MockClient((request) async {
+        if (request.method == 'GET') {
+          return http.Response(jsonEncode([activity]), 200);
+        }
+        expect(request.method, 'PATCH');
+        expect(request.url, Uri.parse('http://test.local:8000/activities/12'));
+        final payload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(payload['nombreActividad'], 'Tarea actualizada');
+        activity = {
+          ...activity,
+          ...Map<String, Object?>.from(payload),
+          'horaActividad': '${payload['horaActividad']}:00',
+        };
+        return http.Response(jsonEncode(activity), 200);
+      }),
+      baseUrl: 'http://test.local:8000',
+    );
+    addTearDown(activitiesApi.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          session: const AuthSession(accessToken: 'test-token'),
+          activitiesApi: activitiesApi,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final menuButton = find.byKey(const Key('activity-actions-12'));
+    await tester.ensureVisible(menuButton);
+    await tester.tap(menuButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-activity-option')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Editar actividad'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('activity-title-field')))
+          .controller
+          ?.text,
+      'Tarea original',
+    );
+    expect(find.text('Guardar cambios'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('activity-title-field')),
+      'Tarea actualizada',
+    );
+    final saveButton = find.byKey(const Key('save-activity-button'));
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tarea actualizada'), findsOneWidget);
+    expect(find.text('Tarea original'), findsNothing);
+  });
+
+  testWidgets('activity deletion requires confirmation and removes the row', (
+    tester,
+  ) async {
+    var deleted = false;
+    final activity = _activityResponse(id: 12, title: 'Tarea para eliminar');
+    final activitiesApi = ActivitiesApi(
+      client: MockClient((request) async {
+        if (request.method == 'GET') {
+          return http.Response(jsonEncode(deleted ? [] : [activity]), 200);
+        }
+        expect(request.method, 'DELETE');
+        expect(request.url, Uri.parse('http://test.local:8000/activities/12'));
+        deleted = true;
+        return http.Response('', 204);
+      }),
+      baseUrl: 'http://test.local:8000',
+    );
+    addTearDown(activitiesApi.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          session: const AuthSession(accessToken: 'test-token'),
+          activitiesApi: activitiesApi,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final menuButton = find.byKey(const Key('activity-actions-12'));
+    await tester.ensureVisible(menuButton);
+    await tester.tap(menuButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-activity-option')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        '¿Deseas eliminar "Tarea para eliminar"? Ya no aparecerá en tus actividades.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('cancel-delete-activity')));
+    await tester.pumpAndSettle();
+    expect(deleted, isFalse);
+    expect(find.text('Tarea para eliminar'), findsOneWidget);
+
+    await tester.tap(menuButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-activity-option')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-activity')));
+    await tester.pumpAndSettle();
+
+    expect(deleted, isTrue);
+    expect(find.byKey(const Key('activities-empty')), findsOneWidget);
+  });
 }
+
+Map<String, Object?> _activityResponse({
+  required int id,
+  required String title,
+}) => {
+  'idActividad': id,
+  'nombreActividad': title,
+  'descripcion': 'Detalle',
+  'fechaActividad': '2030-01-02',
+  'horaActividad': '12:00:00',
+  'categoria': 'Estudio',
+  'prioridad': 'Media',
+  'recordatorioHabilitado': true,
+  'recordatorioMinutosAntes': 15,
+  'idUsuario': 1,
+};

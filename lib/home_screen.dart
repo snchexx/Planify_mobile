@@ -147,6 +147,74 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _editActivity(PlanifyActivity activity) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ActivityCreationScreen(
+          session: widget.session,
+          activitiesApi: _activitiesApi,
+          activity: activity,
+        ),
+      ),
+    );
+    if (updated == true) {
+      await _loadActivities();
+    }
+  }
+
+  Future<void> _deleteActivity(PlanifyActivity activity) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar actividad'),
+        content: Text(
+          '¿Deseas eliminar "${activity.title}"? Ya no aparecerá en tus actividades.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('cancel-delete-activity'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            key: const Key('confirm-delete-activity'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB3261E),
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    try {
+      await _activitiesApi.deleteActivity(
+        id: activity.id,
+        accessToken: widget.session.accessToken,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _activities.removeWhere((item) => item.id == activity.id);
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Actividad eliminada.')));
+    } on ActivitiesApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
   bool _isToday(DateTime date) {
     final now = DateTime.now();
     return date.year == now.year &&
@@ -502,7 +570,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         for (var index = 0; index < displayedActivities.length; index++) ...[
-          _ActivityRow(activity: displayedActivities[index]),
+          _ActivityRow(
+            activity: displayedActivities[index],
+            onEdit: () => _editActivity(displayedActivities[index]),
+            onDelete: () => _deleteActivity(displayedActivities[index]),
+          ),
           if (index != displayedActivities.length - 1)
             const Divider(height: 1, indent: 12, endIndent: 12),
         ],
@@ -687,9 +759,15 @@ class _ActionCard extends StatelessWidget {
 }
 
 class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.activity});
+  const _ActivityRow({
+    required this.activity,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final PlanifyActivity activity;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -751,6 +829,43 @@ class _ActivityRow extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
+          ),
+          PopupMenuButton<String>(
+            key: Key('activity-actions-${activity.id}'),
+            tooltip: 'Opciones de ${activity.title}',
+            padding: EdgeInsets.zero,
+            iconSize: 20,
+            onSelected: (action) {
+              if (action == 'edit') {
+                onEdit();
+              } else if (action == 'delete') {
+                onDelete();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                key: Key('edit-activity-option'),
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Editar'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                key: Key('delete-activity-option'),
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text('Eliminar'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
