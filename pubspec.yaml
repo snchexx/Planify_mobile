@@ -61,6 +61,8 @@ flutter:
 
   assets:
     - assets/planify_presentation.png
+    - assets/create_activity_banner.png
+    - assets/create_activity_banner.png
     - assets/iconoapp.png
     - assets/principal.png
     - assets/assistant_help.png

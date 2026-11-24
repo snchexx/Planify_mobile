@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 import 'package:planify_mobile/config/api_config.dart';
+import 'package:planify_mobile/services/activities_api.dart';
 import 'package:planify_mobile/home_screen.dart';
 import 'package:planify_mobile/services/auth_api.dart';
 
@@ -53,9 +54,10 @@ class PlanifyApp extends StatelessWidget {
 enum _AuthMode { login, register }
 
 class AuthDesignScreen extends StatefulWidget {
-  const AuthDesignScreen({super.key, this.authApi});
+  const AuthDesignScreen({super.key, this.authApi, this.activitiesApi});
 
   final AuthApi? authApi;
+  final ActivitiesApi? activitiesApi;
 
   @override
   State<AuthDesignScreen> createState() => _AuthDesignScreenState();
@@ -275,7 +277,10 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
       }
 
       await Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(builder: (_) => HomeScreen(session: session)),
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              HomeScreen(session: session, activitiesApi: widget.activitiesApi),
+        ),
       );
     } on AuthApiException catch (error) {
       if (!mounted) {

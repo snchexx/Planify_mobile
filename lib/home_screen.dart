@@ -1,105 +1,158 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:planify_mobile/activity_creation_screen.dart';
+import 'package:planify_mobile/services/activities_api.dart';
 import 'package:planify_mobile/services/auth_api.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.session});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, required this.session, this.activitiesApi});
 
   final AuthSession session;
+  final ActivitiesApi? activitiesApi;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late final ActivitiesApi _activitiesApi;
+  late final bool _ownsActivitiesApi;
+  List<PlanifyActivity> _activities = [];
+  bool _isLoadingActivities = true;
+  String? _activitiesError;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsActivitiesApi = widget.activitiesApi == null;
+    _activitiesApi = widget.activitiesApi ?? ActivitiesApi();
+    _loadActivities();
+  }
+
+  @override
+  void dispose() {
+    if (_ownsActivitiesApi) {
+      _activitiesApi.close();
+    }
+    super.dispose();
+  }
 
   String get _firstName {
-    final name = session.firstName?.trim();
+    final name = widget.session.firstName?.trim();
     if (name == null || name.isEmpty) {
       return 'bienvenido';
     }
     return name.split(RegExp(r'\s+')).first;
   }
 
-  static const _activities = [
-    _ActivityData(
-      title: 'Examen de matemáticas',
-      date: '10 sep 2026',
-      time: '8:00 AM',
-      icon: Icons.menu_book_rounded,
-      color: Color(0xFF21177A),
-      statusColor: Color(0xFF21177A),
-      status: 'Pendiente',
-    ),
-    _ActivityData(
-      title: 'Entregar trabajo de programación',
-      date: '10 sep 2026',
-      time: '8:00 AM',
-      icon: Icons.description_rounded,
-      color: Color(0xFF00A85A),
-      statusColor: Color(0xFF00A85A),
-      status: 'Pendiente',
-    ),
-    _ActivityData(
-      title: 'Reunión con el equipo',
-      date: '10 sep 2026',
-      time: '9:00 AM',
-      icon: Icons.groups_rounded,
-      color: Color(0xFF62B6F4),
-      statusColor: Color(0xFF62B6F4),
-      status: 'Pendiente',
-    ),
-    _ActivityData(
-      title: 'Salir al gimnasio',
-      date: '10 sep 2026',
-      time: '10:00 AM',
-      icon: Icons.fitness_center_rounded,
-      color: Color(0xFFE84265),
-      statusColor: Color(0xFFE84265),
-      status: 'Pendiente',
-    ),
-    _ActivityData(
-      title: 'Aprender inglés',
-      date: '10 sep 2026',
-      time: '11:00 AM',
-      icon: Icons.translate_rounded,
-      color: Color(0xFFFFA500),
-      statusColor: Color(0xFFFFA500),
-      status: 'Pendiente',
-    ),
-  ];
-
   static const _actions = [
     _HomeAction(
+      id: 'create-activity',
       label: 'Crear\nActividad',
       icon: Icons.create_new_folder_outlined,
       color: Color(0xFF00A85A),
       background: Color(0xFFD8F9E6),
     ),
     _HomeAction(
+      id: 'ai-agent',
       label: 'Solicitar\nAgente IA',
       icon: Icons.forum_outlined,
       color: Color(0xFF21177A),
       background: Color(0xFFF0EEFF),
     ),
     _HomeAction(
+      id: 'view-activity',
       label: 'Ver\nActividad',
       icon: Icons.assignment_outlined,
       color: Color(0xFF43A8E8),
       background: Color(0xFFE1F4FF),
     ),
     _HomeAction(
+      id: 'reminders',
       label: 'Recordatorios',
       icon: Icons.notifications_none_rounded,
       color: Color(0xFFEA8A00),
       background: Color(0xFFFFF1D4),
     ),
     _HomeAction(
+      id: 'history',
       label: 'Historial',
       icon: Icons.history_rounded,
       color: Color(0xFFFF6B83),
       background: Color(0xFFFFE6E9),
     ),
     _HomeAction(
+      id: 'statistics',
       label: 'Estadísticas',
       icon: Icons.analytics_outlined,
       color: Color(0xFF00A88A),
       background: Color(0xFFDDF8F2),
     ),
   ];
+
+  Future<void> _loadActivities() async {
+    setState(() {
+      _isLoadingActivities = true;
+      _activitiesError = null;
+    });
+
+    try {
+      final allActivities = await _activitiesApi.fetchActivities(
+        accessToken: widget.session.accessToken,
+      );
+      final now = DateTime.now();
+      final upcomingActivities =
+          allActivities
+              .where((activity) => activity.startsAt.isAfter(now))
+              .toList()
+            ..sort((first, second) {
+              final firstNotification = first.notificationAt.isBefore(now)
+                  ? first.startsAt
+                  : first.notificationAt;
+              final secondNotification = second.notificationAt.isBefore(now)
+                  ? second.startsAt
+                  : second.notificationAt;
+              return firstNotification.compareTo(secondNotification);
+            });
+      if (mounted) {
+        setState(() {
+          _activities = upcomingActivities;
+        });
+      }
+    } on ActivitiesApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _activitiesError = error.message;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingActivities = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openActivityCreation() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ActivityCreationScreen(
+          session: widget.session,
+          activitiesApi: _activitiesApi,
+        ),
+      ),
+    );
+    if (created == true) {
+      await _loadActivities();
+    }
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +277,17 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildTodaySummary() {
+    final todayActivities = _activities
+        .where((activity) => _isToday(activity.startsAt))
+        .length;
+    final remindersToday = _activities
+        .where(
+          (activity) =>
+              activity.reminderEnabled == true &&
+              _isToday(activity.notificationAt),
+        )
+        .length;
+
     return Transform.translate(
       key: const Key('summary-overlap'),
       offset: const Offset(0, -12),
@@ -258,7 +322,7 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 9),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -268,15 +332,21 @@ class HomeScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 10, color: Color(0xFF626B70)),
                   ),
                   Text(
-                    '3 actividades',
+                    '$todayActivities actividades',
                     maxLines: 1,
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   Text(
-                    '1 recordatorio pendiente',
+                    '$remindersToday recordatorios pendientes',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10, color: Color(0xFF626B70)),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF626B70),
+                    ),
                   ),
                 ],
               ),
@@ -325,7 +395,13 @@ class HomeScreen extends StatelessWidget {
                 SizedBox(
                   width: itemWidth,
                   height: 86,
-                  child: _ActionCard(action: action),
+                  child: _ActionCard(
+                    key: Key('action-${action.id}'),
+                    action: action,
+                    onTap: action.id == 'create-activity'
+                        ? _openActivityCreation
+                        : null,
+                  ),
                 ),
             ],
           );
@@ -373,18 +449,64 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
-            child: Column(
-              children: [
-                for (var index = 0; index < _activities.length; index++) ...[
-                  _ActivityRow(activity: _activities[index]),
-                  if (index != _activities.length - 1)
-                    const Divider(height: 1, indent: 12, endIndent: 12),
-                ],
-              ],
-            ),
+            child: _buildActivityRows(),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildActivityRows() {
+    if (_isLoadingActivities) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(
+          child: CircularProgressIndicator(
+            key: Key('activities-loading'),
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    if (_activitiesError != null) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Text(
+              _activitiesError!,
+              key: const Key('activities-error'),
+              style: const TextStyle(fontSize: 11, color: Color(0xFF70777D)),
+            ),
+            TextButton(
+              onPressed: _loadActivities,
+              child: const Text('Volver a intentar'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_activities.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Text(
+          'Aún no tienes actividades próximas.',
+          key: Key('activities-empty'),
+          style: TextStyle(fontSize: 11, color: Color(0xFF70777D)),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final displayedActivities = _activities.take(5).toList();
+    return Column(
+      children: [
+        for (var index = 0; index < displayedActivities.length; index++) ...[
+          _ActivityRow(activity: displayedActivities[index]),
+          if (index != displayedActivities.length - 1)
+            const Divider(height: 1, indent: 12, endIndent: 12),
+        ],
+      ],
     );
   }
 
@@ -504,53 +626,61 @@ class _HeaderIconButton extends StatelessWidget {
 }
 
 class _ActionCard extends StatelessWidget {
-  const _ActionCard({required this.action});
+  const _ActionCard({super.key, required this.action, this.onTap});
 
   final _HomeAction action;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
-      decoration: BoxDecoration(
-        color: action.background,
+    return Material(
+      color: action.background,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(13),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x26000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(action.icon, color: action.color, size: 23),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  action.label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: action.color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    height: 1.15,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.arrow_circle_right_rounded,
-                size: 18,
-                color: action.color.withAlpha(160),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x26000000),
+                blurRadius: 4,
+                offset: Offset(0, 2),
               ),
             ],
           ),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(action.icon, color: action.color, size: 23),
+              const Spacer(),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      action.label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: action.color,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_circle_right_rounded,
+                    size: 18,
+                    color: action.color.withAlpha(160),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -559,15 +689,30 @@ class _ActionCard extends StatelessWidget {
 class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.activity});
 
-  final _ActivityData activity;
+  final PlanifyActivity activity;
 
   @override
   Widget build(BuildContext context) {
+    final style = _activityStyle(activity.category);
+    final date = activity.startsAt;
+    final dateLabel =
+        '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year}';
+    final timeLabel =
+        '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
+    final reminderLabel =
+        activity.reminderEnabled == true &&
+            activity.reminderMinutesBefore != null
+        ? 'Aviso ${activity.reminderMinutesBefore} min antes'
+        : 'Sin recordatorio';
+    final priority = activity.priority ?? 'Media';
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
-          Icon(activity.icon, size: 20, color: activity.color),
+          Icon(style.icon, size: 20, color: style.color),
           const SizedBox(width: 7),
           Expanded(
             child: Column(
@@ -583,7 +728,9 @@ class _ActivityRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${activity.date}   ${activity.time}',
+                  '$dateLabel   $timeLabel · $reminderLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 9, color: Color(0xFF70777D)),
                 ),
               ],
@@ -593,56 +740,68 @@ class _ActivityRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color: activity.color.withAlpha(30),
+              color: style.color.withAlpha(30),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              activity.status,
+              priority,
               style: TextStyle(
-                color: activity.statusColor,
+                color: style.color,
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(width: 2),
-          const Icon(Icons.more_vert, size: 18),
         ],
       ),
     );
+  }
+
+  _ActivityStyle _activityStyle(String? category) {
+    switch (category?.toLowerCase()) {
+      case 'estudio':
+        return const _ActivityStyle(
+          icon: Icons.menu_book_rounded,
+          color: Color(0xFF21177A),
+        );
+      case 'trabajo':
+        return const _ActivityStyle(
+          icon: Icons.work_outline_rounded,
+          color: Color(0xFF00A85A),
+        );
+      case 'personal':
+        return const _ActivityStyle(
+          icon: Icons.person_outline_rounded,
+          color: Color(0xFF62A5D8),
+        );
+      default:
+        return const _ActivityStyle(
+          icon: Icons.event_note_rounded,
+          color: Color(0xFFEA8A00),
+        );
+    }
   }
 }
 
 class _HomeAction {
   const _HomeAction({
+    required this.id,
     required this.label,
     required this.icon,
     required this.color,
     required this.background,
   });
 
+  final String id;
   final String label;
   final IconData icon;
   final Color color;
   final Color background;
 }
 
-class _ActivityData {
-  const _ActivityData({
-    required this.title,
-    required this.date,
-    required this.time,
-    required this.icon,
-    required this.color,
-    required this.statusColor,
-    required this.status,
-  });
+class _ActivityStyle {
+  const _ActivityStyle({required this.icon, required this.color});
 
-  final String title;
-  final String date;
-  final String time;
   final IconData icon;
   final Color color;
-  final Color statusColor;
-  final String status;
 }

@@ -23,3 +23,9 @@ emulador Android usa `http://10.0.2.2:8000`.
 El registro envía `identificacion`, `nombres`, `apellidos`, `email` y `password`
 a `POST /auth/register`. El permiso HTTP sin cifrar está habilitado únicamente
 en compilaciones de depuración; una versión de producción debe usar HTTPS.
+
+La pantalla **Crear Actividad** guarda actividades autenticadas en
+`POST /activities`, y la pantalla principal consulta `GET /activities` para
+mostrar las próximas ordenadas por la hora del recordatorio. La descripción es
+opcional; las prioridades válidas son `Alta`, `Media` y `Baja`, y los intervalos
+de recordatorio son 15, 25, 35, 45 o 60 minutos.

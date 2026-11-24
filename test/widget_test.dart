@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:planify_mobile/home_screen.dart';
 import 'package:planify_mobile/main.dart';
+import 'package:planify_mobile/services/activities_api.dart';
 import 'package:planify_mobile/services/auth_api.dart';
 
 void main() {
@@ -131,9 +133,16 @@ void main() {
     });
     addTearDown(client.close);
     final authApi = AuthApi(client: client, baseUrl: 'http://test.local:8000');
+    final activitiesApi = ActivitiesApi(
+      client: MockClient((_) async => http.Response('[]', 200)),
+      baseUrl: 'http://test.local:8000',
+    );
+    addTearDown(activitiesApi.close);
 
     await tester.pumpWidget(
-      MaterialApp(home: AuthDesignScreen(authApi: authApi)),
+      MaterialApp(
+        home: AuthDesignScreen(authApi: authApi, activitiesApi: activitiesApi),
+      ),
     );
     await tester.enterText(
       find.byKey(const Key('email-field')),
@@ -178,5 +187,104 @@ void main() {
     );
     expect(summaryOverlap.transform.getTranslation().y, -12);
     expect(find.text('Solicitar\nAgente IA'), findsOneWidget);
+  });
+
+  testWidgets('create activity action opens the activity form', (tester) async {
+    final activitiesApi = ActivitiesApi(
+      client: MockClient((_) async => http.Response('[]', 200)),
+      baseUrl: 'http://test.local:8000',
+    );
+    addTearDown(activitiesApi.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          session: const AuthSession(accessToken: 'test-token'),
+          activitiesApi: activitiesApi,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('action-create-activity')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Crear actividad'), findsOneWidget);
+    expect(find.byKey(const Key('create-activity-banner')), findsOneWidget);
+    expect(find.byKey(const Key('activity-title-field')), findsOneWidget);
+    expect(find.byKey(const Key('activity-date-picker')), findsOneWidget);
+    expect(find.byKey(const Key('reminder-offset-dropdown')), findsOneWidget);
+
+    final otherCategoryButton = find.byKey(const Key('category-otros-button'));
+    await tester.ensureVisible(otherCategoryButton);
+    await tester.tap(otherCategoryButton);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('custom-category-field')), findsOneWidget);
+  });
+
+  testWidgets('home sorts upcoming activities by next notification time', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final earlierNotification = now.add(const Duration(hours: 23));
+    final laterNotification = now.add(const Duration(days: 1));
+    String dateString(DateTime date) =>
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    String timeString(DateTime date) =>
+        '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
+
+    final activitiesApi = ActivitiesApi(
+      client: MockClient((_) async {
+        return http.Response(
+          jsonEncode([
+            {
+              'idActividad': 1,
+              'nombreActividad': 'Notificación más tarde',
+              'descripcion': '',
+              'fechaActividad': dateString(laterNotification),
+              'horaActividad': timeString(laterNotification),
+              'categoria': 'Estudio',
+              'prioridad': 'Media',
+              'recordatorioHabilitado': true,
+              'recordatorioMinutosAntes': 15,
+              'idUsuario': 1,
+            },
+            {
+              'idActividad': 2,
+              'nombreActividad': 'Notificación más próxima',
+              'descripcion': '',
+              'fechaActividad': dateString(earlierNotification),
+              'horaActividad': timeString(earlierNotification),
+              'categoria': 'Trabajo',
+              'prioridad': 'Alta',
+              'recordatorioHabilitado': true,
+              'recordatorioMinutosAntes': 15,
+              'idUsuario': 1,
+            },
+          ]),
+          200,
+        );
+      }),
+      baseUrl: 'http://test.local:8000',
+    );
+    addTearDown(activitiesApi.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          session: const AuthSession(accessToken: 'test-token'),
+          activitiesApi: activitiesApi,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final earlierTitle = tester.getTopLeft(
+      find.text('Notificación más próxima'),
+    );
+    final laterTitle = tester.getTopLeft(find.text('Notificación más tarde'));
+    expect(earlierTitle.dy, lessThan(laterTitle.dy));
   });
 }
