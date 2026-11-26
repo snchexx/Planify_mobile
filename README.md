@@ -4,21 +4,29 @@ Aplicación Flutter de Planify.
 
 ## Ejecutar en desarrollo
 
-Desde esta carpeta:
+Desde esta carpeta, conecta el teléfono por USB y autoriza la depuración USB:
 
 ```powershell
 flutter pub get
-flutter run --dart-define=PLANIFY_API_BASE_URL=http://192.168.137.1:8000
+adb reverse tcp:8000 tcp:8000
+flutter run
 ```
 
 Inicia el backend desde `C:\planify` con `npm run start:dev`. El backend debe
 tener su conexión MySQL configurada en su propio `.env`; no copies ese archivo
-ni sus credenciales a la aplicación. El teléfono y el equipo deben estar en la
-misma red y el firewall debe permitir el puerto `8000`.
+ni sus credenciales a la aplicación. Mantén el teléfono conectado por USB
+mientras usas la aplicación. El puente ADB evita depender de la red Wi-Fi o de
+una regla de entrada en el firewall.
 
-La IP `192.168.137.1` corresponde a la conexión local usada durante esta
-configuración. Si cambia la red, reemplázala por la IPv4 del equipo. Para el
-emulador Android usa `http://10.0.2.2:8000`.
+Para usar Wi-Fi, compila con `--dart-define=PLANIFY_API_BASE_URL=http://<IPv4-del-equipo>:8000`;
+el teléfono debe poder acceder al puerto `8000` del equipo. Para el emulador
+Android usa `http://10.0.2.2:8000`.
+
+Si ejecutas la app desde VS Code, ejecuta `adb reverse tcp:8000 tcp:8000`
+después de conectar el dispositivo. El puente se pierde al desconectar el USB.
+
+El valor de `PLANIFY_API_BASE_URL` se incorpora al paquete durante la
+compilación; recompila la app si cambias la dirección.
 
 El registro envía `identificacion`, `nombres`, `apellidos`, `email` y `password`
 a `POST /auth/register`. El permiso HTTP sin cifrar está habilitado únicamente

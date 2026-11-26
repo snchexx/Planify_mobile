@@ -1,7 +1,13 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:planify_mobile/activity_creation_screen.dart';
 import 'package:planify_mobile/services/activities_api.dart';
 import 'package:planify_mobile/services/auth_api.dart';
+import 'package:planify_mobile/services/notifications_api.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.session, this.activitiesApi});
@@ -16,6 +22,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final ActivitiesApi _activitiesApi;
   late final bool _ownsActivitiesApi;
+  late final NotificationsApi _notificationsApi;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
   List<PlanifyActivity> _activities = [];
   bool _isLoadingActivities = true;
   String? _activitiesError;
@@ -25,15 +34,116 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _ownsActivitiesApi = widget.activitiesApi == null;
     _activitiesApi = widget.activitiesApi ?? ActivitiesApi();
+    _notificationsApi = NotificationsApi();
     _loadActivities();
+    if (Firebase.apps.isNotEmpty) {
+      _initializeNotifications();
+    }
   }
 
   @override
   void dispose() {
+    unawaited(_tokenRefreshSubscription?.cancel());
+    unawaited(_foregroundMessageSubscription?.cancel());
+    _notificationsApi.close();
     if (_ownsActivitiesApi) {
       _activitiesApi.close();
     }
     super.dispose();
+  }
+
+  Future<void> _initializeNotifications() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final settings = await messaging.requestPermission();
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        return;
+      }
+
+      // The Admin SDK needs an FCM registration token; register() returns a FID.
+      // ignore: deprecated_member_use
+      final token = await messaging.getToken();
+      if (token == null) {
+        throw const NotificationsApiException(
+          'Firebase no proporcionó un token FCM para este dispositivo.',
+        );
+      }
+      await _registerNotificationToken(token);
+
+      // ignore: deprecated_member_use
+      _tokenRefreshSubscription = messaging.onTokenRefresh.listen(
+        (token) {
+          unawaited(
+            _registerNotificationToken(token).catchError((Object error) {
+              _showNotificationMessage(_notificationErrorMessage(error));
+            }),
+          );
+        },
+        onError: (Object _) {
+          _showNotificationMessage(
+            'No se pudo actualizar el registro de notificaciones.',
+          );
+        },
+      );
+
+      _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen((
+        message,
+      ) {
+        final title = message.notification?.title;
+        final body = message.notification?.body;
+        final content = [
+          title,
+          body,
+        ].whereType<String>().where((text) => text.isNotEmpty).join(': ');
+        _showNotificationMessage(
+          content.isEmpty ? 'Notificación recibida.' : content,
+        );
+      });
+    } on FirebaseException catch (error) {
+      _showNotificationMessage(
+        'No se pudo configurar Firebase (${error.code}): '
+        '${error.message ?? 'sin detalle'}',
+      );
+    } on NotificationsApiException catch (error) {
+      _showNotificationMessage(error.message);
+    }
+  }
+
+  Future<void> _registerNotificationToken(String token) {
+    return _notificationsApi.registerDevice(
+      accessToken: widget.session.accessToken,
+      token: token,
+      platform: defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
+    );
+  }
+
+  Future<void> _sendTestNotification() async {
+    try {
+      final result = await _notificationsApi.sendTest(
+        accessToken: widget.session.accessToken,
+      );
+      _showNotificationMessage(
+        'Prueba enviada a ${result.sent} dispositivo(s).',
+      );
+    } on NotificationsApiException catch (error) {
+      _showNotificationMessage(error.message);
+    }
+  }
+
+  String _notificationErrorMessage(Object error) {
+    if (error is NotificationsApiException) {
+      return error.message;
+    }
+    return 'No se pudo registrar este dispositivo para notificaciones.';
+  }
+
+  void _showNotificationMessage(String message) {
+    if (!mounted || message.isEmpty) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   String get _firstName {
@@ -328,7 +438,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _HeaderIconButton(
                     icon: Icons.notifications_none_rounded,
-                    label: 'Notificaciones',
+                    label: kDebugMode
+                        ? 'Enviar notificación de prueba'
+                        : 'Notificaciones',
+                    onPressed: kDebugMode ? _sendTestNotification : null,
                   ),
                   const SizedBox(width: 8),
                   _HeaderIconButton(
@@ -681,15 +794,20 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HeaderIconButton extends StatelessWidget {
-  const _HeaderIconButton({required this.icon, required this.label});
+  const _HeaderIconButton({
+    required this.icon,
+    required this.label,
+    this.onPressed,
+  });
 
   final IconData icon;
   final String label;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      onPressed: null,
+      onPressed: onPressed,
       tooltip: label,
       visualDensity: VisualDensity.compact,
       icon: Icon(icon, size: 22, color: const Color(0xFF00994B)),

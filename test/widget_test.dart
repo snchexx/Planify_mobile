@@ -73,6 +73,90 @@ void main() {
     expect(identificationToNameGap, greaterThanOrEqualTo(18));
   });
 
+  testWidgets('validates login fields before contacting the backend', (
+    tester,
+  ) async {
+    var requestSent = false;
+    final client = MockClient((_) async {
+      requestSent = true;
+      return http.Response('{}', 400);
+    });
+    addTearDown(client.close);
+    final authApi = AuthApi(client: client, baseUrl: 'http://test.local:8000');
+
+    await tester.pumpWidget(
+      MaterialApp(home: AuthDesignScreen(authApi: authApi)),
+    );
+    final submitButton = find.byKey(const Key('submit-button'));
+    await tester.ensureVisible(submitButton);
+    await tester.tap(submitButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ingresa tu correo electrónico.'), findsOneWidget);
+    expect(find.text('Ingresa tu contraseña.'), findsOneWidget);
+    expect(requestSent, isFalse);
+  });
+
+  testWidgets('requests a recovery code and resets the password', (
+    tester,
+  ) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/auth/password/forgot') {
+        expect(jsonDecode(request.body), {'email': 'ana@example.com'});
+        return http.Response('{"message":"Código enviado."}', 200);
+      }
+      if (request.url.path == '/auth/password/reset') {
+        expect(jsonDecode(request.body), {
+          'email': 'ana@example.com',
+          'code': '123456',
+          'password': 'nueva-password-segura',
+        });
+        return http.Response('{"message":"Contraseña restablecida."}', 200);
+      }
+      throw StateError('Unexpected endpoint: ${request.url.path}');
+    });
+    addTearDown(client.close);
+    final authApi = AuthApi(client: client, baseUrl: 'http://test.local:8000');
+
+    await tester.pumpWidget(
+      MaterialApp(home: AuthDesignScreen(authApi: authApi)),
+    );
+    await tester.enterText(
+      find.byKey(const Key('email-field')),
+      'Ana@Example.com',
+    );
+    final forgotButton = find.byKey(const Key('forgot-password-button'));
+    await tester.ensureVisible(forgotButton);
+    await tester.tap(forgotButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('recovery-email-field')))
+          .controller
+          ?.text,
+      'Ana@Example.com',
+    );
+    await tester.tap(find.byKey(const Key('recovery-submit-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('recovery-code-field')), findsOneWidget);
+    expect(find.byKey(const Key('recovery-information')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('recovery-code-field')),
+      '123456',
+    );
+    await tester.enterText(
+      find.byKey(const Key('recovery-new-password-field')),
+      'nueva-password-segura',
+    );
+    await tester.tap(find.byKey(const Key('recovery-reset-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tu contraseña fue actualizada.'), findsOneWidget);
+    expect(find.byKey(const Key('recovery-finish-button')), findsOneWidget);
+  });
+
   testWidgets('submits registration and returns to login after success', (
     tester,
   ) async {

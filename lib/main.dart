@@ -1,13 +1,17 @@
 import 'dart:convert';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 import 'package:planify_mobile/config/api_config.dart';
 import 'package:planify_mobile/services/activities_api.dart';
 import 'package:planify_mobile/home_screen.dart';
 import 'package:planify_mobile/services/auth_api.dart';
+import 'package:planify_mobile/password_recovery_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const PlanifyApp());
 }
 
@@ -206,6 +210,32 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
     return null;
   }
 
+  String? _validateLoginField(_AuthFieldData field, String? value) {
+    final input = value ?? '';
+    if (field.id == 'email') {
+      final email = input.trim();
+      if (email.isEmpty) {
+        return 'Ingresa tu correo electrónico.';
+      }
+      if (email.length > 255 ||
+          !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+        return 'Ingresa un correo electrónico válido.';
+      }
+      return null;
+    }
+
+    if (input.isEmpty) {
+      return 'Ingresa tu contraseña.';
+    }
+    if (input.length < 8) {
+      return 'La contraseña debe tener al menos 8 caracteres.';
+    }
+    if (utf8.encode(input).length > 72) {
+      return 'La contraseña no puede superar 72 bytes.';
+    }
+    return null;
+  }
+
   Future<void> _submitRegistration() async {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!(_registrationFormKey.currentState?.validate() ?? false)) {
@@ -222,7 +252,7 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
         identificacion: _identificationController.text.trim(),
         nombres: _firstNameController.text.trim(),
         apellidos: _lastNameController.text.trim(),
-        email: _registerEmailController.text.trim(),
+        email: _registerEmailController.text.trim().toLowerCase(),
         password: _registerPasswordController.text,
       );
       if (!mounted) {
@@ -262,6 +292,9 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
 
   Future<void> _submitLogin() async {
     FocusManager.instance.primaryFocus?.unfocus();
+    if (!(_registrationFormKey.currentState?.validate() ?? false)) {
+      return;
+    }
     setState(() {
       _isSubmitting = true;
       _loginError = null;
@@ -505,9 +538,9 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
           controller: _controllerFor(field.id),
           keyboardType: field.keyboardType,
           obscureText: field.isPassword && _obscurePassword,
-          validator: _mode == _AuthMode.register
-              ? (value) => _validateRegistrationField(field, value)
-              : null,
+          validator: (value) => _mode == _AuthMode.register
+              ? _validateRegistrationField(field, value)
+              : _validateLoginField(field, value),
           decoration: InputDecoration(
             hintText: field.hint,
             suffixIcon: field.isPassword
@@ -553,7 +586,20 @@ class _AuthDesignScreenState extends State<AuthDesignScreen> {
         ),
         Flexible(
           child: TextButton(
-            onPressed: () {},
+            key: const Key('forgot-password-button'),
+            onPressed: _isSubmitting
+                ? null
+                : () {
+                    _loginPasswordController.clear();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PasswordRecoveryScreen(
+                          authApi: _authApi,
+                          initialEmail: _loginEmailController.text.trim(),
+                        ),
+                      ),
+                    );
+                  },
             style: TextButton.styleFrom(
               foregroundColor: PlanifyApp._green,
               padding: EdgeInsets.zero,

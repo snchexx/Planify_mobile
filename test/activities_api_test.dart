@@ -173,4 +173,26 @@ void main() {
       completes,
     );
   });
+
+  test('explains how to restore a failed USB connection', () async {
+    final client = MockClient((_) async {
+      throw http.ClientException('Connection refused');
+    });
+    addTearDown(client.close);
+    final api = ActivitiesApi(
+      client: client,
+      baseUrl: 'http://test.local:8000',
+    );
+
+    await expectLater(
+      api.fetchActivities(accessToken: 'test-token'),
+      throwsA(
+        isA<ActivitiesApiException>().having(
+          (error) => error.message,
+          'message',
+          contains('adb reverse tcp:8000 tcp:8000'),
+        ),
+      ),
+    );
+  });
 }

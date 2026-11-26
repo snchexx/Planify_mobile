@@ -251,7 +251,7 @@ class ActivitiesApi {
       );
     } on http.ClientException {
       throw const ActivitiesApiException(
-        'No se pudo conectar con el servidor. Verifica que esté activo.',
+        'No se pudo conectar con Planify. Verifica que el servidor esté activo y que el puente USB siga conectado (adb reverse tcp:8000 tcp:8000).',
       );
     }
   }
